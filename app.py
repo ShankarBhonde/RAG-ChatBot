@@ -55,7 +55,7 @@ def ask_gemini_with_context(question, docs, api_key):
     (no fragile LangChain chains)
     """
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         temperature=0.3,
         google_api_key=api_key
     )
