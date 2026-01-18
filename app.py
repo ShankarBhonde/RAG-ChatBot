@@ -1,16 +1,10 @@
 import streamlit as st
-#from PyPDF2 import PdfReader
 from pypdf import PdfReader
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import google.generativeai as genai
-
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
-
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
 from langchain_core.prompts import PromptTemplate
 
 import os
@@ -20,48 +14,7 @@ import os
 st.set_page_config(page_title="Document Genie", layout="wide")
 
 st.markdown("""
-<style>
-#normal-blink {
-    text-align: center;
-    background: rgba(0, 0, 0, 0.75);
-    padding: 5px 30px;
-    border-radius: 12px;
-    border: 3px solid #f28705;
-    backdrop-filter: blur(5px);
-    margin-top: 20px;
-}
-.blink {
-    font-size: 35px;
-    font-weight: bold;
-    color: #00C4FF;
-    animation: blinker 1s linear infinite;
-}
-@keyframes blinker {
-    50% { opacity: 0; }
-}
-</style>
-
-<div id="normal-blink">
-    <div class="blink">Welcome To My Chatbot 💁</div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
 ## Document Genie: Get instant insights from your Documents
-
-This chatbot uses Retrieval-Augmented Generation (RAG) with Google's **Gemini-2.5-flash** model.
-It:
-1) Reads PDFs  
-2) Splits them into chunks  
-3) Creates embeddings  
-4) Stores them in FAISS  
-5) Retrieves relevant chunks  
-6) Generates accurate answers  
-
-### Steps:
-1. Enter your Google API Key  
-2. Upload PDFs and click **Submit & Process**  
-3. Ask questions about your documents  
 """)
 
 # ---------------- API KEY INPUT ---------------- #
@@ -85,8 +38,7 @@ def get_text_chunks(text):
         chunk_size=2000,
         chunk_overlap=200
     )
-    chunks = text_splitter.split_text(text)
-    return chunks
+    return text_splitter.split_text(text)
 
 def get_vector_store(text_chunks, api_key):
     embeddings = GoogleGenerativeAIEmbeddings(
@@ -95,10 +47,23 @@ def get_vector_store(text_chunks, api_key):
     )
 
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_store")
+    vector_store.save_local("faiss_store")   # Auto-creates folder
 
-def get_qa_chain(api_key):
-    prompt_template = """
+def ask_gemini_with_context(question, docs, api_key):
+    """
+    Simple, reliable way to ask Gemini with retrieved context
+    (no fragile LangChain chains)
+    """
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        temperature=0.3,
+        google_api_key=api_key
+    )
+
+    # Combine retrieved documents into one context string
+    context = "\n\n".join([doc.page_content for doc in docs])
+
+    prompt = f"""
     Answer the question as detailed as possible from the provided context.
     If the answer is not in the context, say:
     "Answer is not available in the context."
@@ -112,19 +77,7 @@ def get_qa_chain(api_key):
     Answer:
     """
 
-    model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0.3,
-        google_api_key=api_key
-    )
-
-    prompt = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "question"]
-    )
-
-    document_chain = create_stuff_documents_chain(model, prompt)
-    return document_chain
+    return llm.invoke(prompt).content
 
 def user_input(user_question, api_key):
     if not os.path.exists("faiss_store"):
@@ -142,17 +95,13 @@ def user_input(user_question, api_key):
         allow_dangerous_deserialization=True
     )
 
-    retriever = vector_db.as_retriever(search_kwargs={"k": 5})
+    # Retrieve top 5 relevant chunks
+    docs = vector_db.similarity_search(user_question, k=5)
 
-    document_chain = get_qa_chain(api_key)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-    response = retrieval_chain.invoke({
-        "input": user_question
-    })
+    answer = ask_gemini_with_context(user_question, docs, api_key)
 
     st.write("Reply:")
-    st.write(response["answer"])
+    st.write(answer)
 
 # ---------------- MAIN APP ---------------- #
 
