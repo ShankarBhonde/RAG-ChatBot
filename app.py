@@ -13,7 +13,7 @@ import os
 st.set_page_config(page_title="Simple RAG Chatbot", layout="wide")
 
 st.title("📄 Simple PDF Chatbot (RAG)")
-st.write("fistly create you api key")
+st.write("fistly create your api key")
 st.link_button("Get Google API Key", "https://aistudio.google.com/app/api-keys")
 
 st.write("Upload a PDF, then ask questions about it.")
