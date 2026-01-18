@@ -5,8 +5,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
 
+import google.generativeai as genai
 import os
 
 # ---------------- STREAMLIT UI ---------------- #
@@ -17,9 +17,16 @@ st.markdown("""
 ## Document Genie: Get instant insights from your Documents
 """)
 
-# ---------------- API KEY INPUT ---------------- #
+# ---------------- API KEY INPUT (IMPORTANT FIX) ---------------- #
 
 api_key = st.text_input("Enter your Google API Key:", type="password", key="api_key_input")
+
+# Configure Gemini immediately when key is entered
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        st.error(f"API Key configuration failed: {str(e)}")
 
 # ---------------- HELPER FUNCTIONS ---------------- #
 
@@ -41,21 +48,25 @@ def get_text_chunks(text):
     return text_splitter.split_text(text)
 
 def get_vector_store(text_chunks, api_key):
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
-        google_api_key=api_key
-    )
+    try:
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-004",
+            google_api_key=api_key
+        )
 
-    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_store")   # Auto-creates folder
+        vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+        vector_store.save_local("faiss_store")
+
+        st.success("✅ FAISS vector store created successfully!")
+
+    except Exception as e:
+        st.error("❌ Embedding Failed")
+        st.error(str(e))
+        st.stop()
 
 def ask_gemini_with_context(question, docs, api_key):
-    """
-    Simple, reliable way to ask Gemini with retrieved context
-    (no fragile LangChain chains)
-    """
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
+        model="gemini-2.5-flash",
         temperature=0.3,
         google_api_key=api_key
     )
