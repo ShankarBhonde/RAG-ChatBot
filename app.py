@@ -47,7 +47,7 @@ def get_text_chunks(text):
     return text_splitter.split_text(text)
 
 def get_embedding(text):
-    """Generate embedding using Google Gemini directly"""
+    """Generate embedding using Google Gemini directly (NO LANGCHAIN)"""
     result = genai.embed_content(
         model="models/text-embedding-004",
         content=text
@@ -55,7 +55,7 @@ def get_embedding(text):
     return np.array(result["embedding"], dtype=np.float32)
 
 def build_faiss_index(chunks):
-    """Create FAISS index manually (most reliable)"""
+    """Create FAISS index manually (this is the part that fixes your error)"""
     vectors = np.array([get_embedding(chunk) for chunk in chunks])
 
     dimension = vectors.shape[1]
@@ -81,9 +81,9 @@ def search_faiss(query, k=5):
     return results
 
 def ask_gemini_with_context(question, docs):
-    """UPDATED MODEL HERE → gemini-3-flash-preview"""
+    """Uses your model: gemini-3-flash-preview"""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",   # ✅ YOUR MODEL
+        model="gemini-3-flash-preview",
         temperature=0.3,
         google_api_key=api_key
     )
