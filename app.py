@@ -1,13 +1,13 @@
 import streamlit as st
 from pypdf import PdfReader
+import google.generativeai as genai
+import numpy as np
+import faiss
+import pickle
+import os
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
-
-import google.generativeai as genai
-import os
 
 # ---------------- STREAMLIT UI ---------------- #
 
@@ -17,11 +17,10 @@ st.markdown("""
 ## Document Genie: Get instant insights from your Documents
 """)
 
-# ---------------- API KEY INPUT (IMPORTANT FIX) ---------------- #
+# ---------------- API KEY INPUT ---------------- #
 
 api_key = st.text_input("Enter your Google API Key:", type="password", key="api_key_input")
 
-# Configure Gemini immediately when key is entered
 if api_key:
     try:
         genai.configure(api_key=api_key)
@@ -47,32 +46,49 @@ def get_text_chunks(text):
     )
     return text_splitter.split_text(text)
 
-def get_vector_store(text_chunks, api_key):
-    try:
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
-            google_api_key=api_key
-        )
+def get_embedding(text):
+    """Generate embedding using Google Gemini directly"""
+    result = genai.embed_content(
+        model="models/text-embedding-004",
+        content=text
+    )
+    return np.array(result["embedding"], dtype=np.float32)
 
-        vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-        vector_store.save_local("faiss_store")
+def build_faiss_index(chunks):
+    """Create FAISS index manually (most reliable)"""
+    vectors = np.array([get_embedding(chunk) for chunk in chunks])
 
-        st.success("✅ FAISS vector store created successfully!")
+    dimension = vectors.shape[1]
+    index = faiss.IndexFlatL2(dimension)
+    index.add(vectors)
 
-    except Exception as e:
-        st.error("❌ Embedding Failed")
-        st.error(str(e))
-        st.stop()
+    # Save index + text chunks
+    faiss.write_index(index, "faiss_index.bin")
+    with open("faiss_texts.pkl", "wb") as f:
+        pickle.dump(chunks, f)
 
-def ask_gemini_with_context(question, docs, api_key):
+def load_faiss_index():
+    index = faiss.read_index("faiss_index.bin")
+    with open("faiss_texts.pkl", "rb") as f:
+        texts = pickle.load(f)
+    return index, texts
+
+def search_faiss(query, k=5):
+    index, texts = load_faiss_index()
+    query_vector = get_embedding(query).reshape(1, -1)
+    distances, indices = index.search(query_vector, k)
+    results = [texts[i] for i in indices[0]]
+    return results
+
+def ask_gemini_with_context(question, docs):
+    """UPDATED MODEL HERE → gemini-3-flash-preview"""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
+        model="gemini-3-flash-preview",   # ✅ YOUR MODEL
         temperature=0.3,
         google_api_key=api_key
     )
 
-    # Combine retrieved documents into one context string
-    context = "\n\n".join([doc.page_content for doc in docs])
+    context = "\n\n".join(docs)
 
     prompt = f"""
     Answer the question as detailed as possible from the provided context.
@@ -90,30 +106,6 @@ def ask_gemini_with_context(question, docs, api_key):
 
     return llm.invoke(prompt).content
 
-def user_input(user_question, api_key):
-    if not os.path.exists("faiss_store"):
-        st.error("⚠ Please upload and process PDF first.")
-        return
-
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
-        google_api_key=api_key
-    )
-
-    vector_db = FAISS.load_local(
-        "faiss_store",
-        embeddings,
-        allow_dangerous_deserialization=True
-    )
-
-    # Retrieve top 5 relevant chunks
-    docs = vector_db.similarity_search(user_question, k=5)
-
-    answer = ask_gemini_with_context(user_question, docs, api_key)
-
-    st.write("Reply:")
-    st.write(answer)
-
 # ---------------- MAIN APP ---------------- #
 
 def main():
@@ -127,8 +119,14 @@ def main():
             st.error("⚠ Please enter your API Key first.")
         elif not user_question:
             st.error("⚠ Please enter a question.")
+        elif not os.path.exists("faiss_index.bin"):
+            st.error("⚠ Please upload and process PDF first.")
         else:
-            user_input(user_question, api_key)
+            docs = search_faiss(user_question, k=5)
+            answer = ask_gemini_with_context(user_question, docs)
+
+            st.write("Reply:")
+            st.write(answer)
 
     with st.sidebar:
         st.title("Menu:")
@@ -148,8 +146,8 @@ def main():
                 with st.spinner("Processing..."):
                     raw_text = get_pdf_text(pdf_docs)
                     text_chunks = get_text_chunks(raw_text)
-                    get_vector_store(text_chunks, api_key)
-                    st.success("✅ PDFs Processed Successfully!")
+                    build_faiss_index(text_chunks)
+                    st.success("✅ PDFs Processed & FAISS index created!")
 
 if __name__ == "__main__":
     main()
