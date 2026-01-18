@@ -7,16 +7,19 @@ import pickle
 import os
 
 # -------------------------
-# 1️⃣ SETUP STREAMLIT UI
+# 1️. SETUP STREAMLIT UI
 # -------------------------
 
 st.set_page_config(page_title="Simple RAG Chatbot", layout="wide")
 
 st.title("📄 Simple PDF Chatbot (RAG)")
+st.write("fistly create you api key")
+st.link_button("Get Google API Key", "https://aistudio.google.com/app/api-keys")
+
 st.write("Upload a PDF, then ask questions about it.")
 
 # -------------------------
-# 2️⃣ GET API KEY
+# 2️. GET API KEY
 # -------------------------
 
 api_key = st.text_input("Hello Enter your Google API Key:", type="password")
@@ -25,7 +28,7 @@ if api_key:
     genai.configure(api_key=api_key)
 
 # -------------------------
-# 3️⃣ READ PDF FUNCTION
+# 3️. READ PDF FUNCTION
 # -------------------------
 
 def read_pdf(files):
@@ -37,7 +40,7 @@ def read_pdf(files):
     return text
 
 # -------------------------
-# 4️⃣ SPLIT TEXT INTO CHUNKS
+# 4️.  SPLIT TEXT INTO CHUNKS
 # -------------------------
 
 def split_text(text):
@@ -52,7 +55,7 @@ def split_text(text):
     return chunks
 
 # -------------------------
-# 5️⃣ CREATE EMBEDDING
+# 5️. CREATE EMBEDDING
 # -------------------------
 
 def get_embedding(text):
@@ -63,7 +66,7 @@ def get_embedding(text):
     return np.array(result["embedding"], dtype=np.float32)
 
 # -------------------------
-# 6️⃣ BUILD FAISS INDEX
+# 6️. BUILD FAISS INDEX
 # -------------------------
 
 def build_index(chunks):
@@ -79,7 +82,7 @@ def build_index(chunks):
         pickle.dump(chunks, f)
 
 # -------------------------
-# 7️⃣ SEARCH FUNCTION
+# 7️. SEARCH FUNCTION
 # -------------------------
 
 def search_index(query, k=5):
@@ -94,7 +97,7 @@ def search_index(query, k=5):
     return results
 
 # -------------------------
-# 8️⃣ ASK GEMINI WITH CONTEXT
+# 8️. ASK GEMINI WITH CONTEXT
 # -------------------------
 
 def ask_gemini(question, context):
@@ -112,7 +115,7 @@ def ask_gemini(question, context):
     return response.text
 
 # -------------------------
-# 9️⃣ MAIN APP LOGIC
+# 9️. MAIN APP LOGIC
 # -------------------------
 
 # Sidebar for PDF upload
