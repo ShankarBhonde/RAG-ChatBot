@@ -66,7 +66,7 @@ def get_vector_store(text_chunks, api_key):
 
 def ask_gemini_with_context(question, docs, api_key):
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         temperature=0.3,
         google_api_key=api_key
     )
