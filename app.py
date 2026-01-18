@@ -6,56 +6,67 @@ import faiss
 import pickle
 import os
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI
+# -------------------------
+# 1️⃣ SETUP STREAMLIT UI
+# -------------------------
 
-# ---------------- STREAMLIT UI ---------------- #
+st.set_page_config(page_title="Simple RAG Chatbot", layout="wide")
 
-st.set_page_config(page_title="Document Genie", layout="wide")
+st.title("📄 Simple PDF Chatbot (RAG)")
+st.write("Upload a PDF, then ask questions about it.")
 
-st.markdown("""
-## Document Genie: Get instant insights from your Documents
-""")
+# -------------------------
+# 2️⃣ GET API KEY
+# -------------------------
 
-# ---------------- API KEY INPUT ---------------- #
-
-api_key = st.text_input("Enter your Google API Key:", type="password", key="api_key_input")
+api_key = st.text_input("Enter your Google API Key:", type="password")
 
 if api_key:
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        st.error(f"API Key configuration failed: {str(e)}")
+    genai.configure(api_key=api_key)
 
-# ---------------- HELPER FUNCTIONS ---------------- #
+# -------------------------
+# 3️⃣ READ PDF FUNCTION
+# -------------------------
 
-def get_pdf_text(pdf_docs):
+def read_pdf(files):
     text = ""
-    for pdf in pdf_docs:
-        pdf_reader = PdfReader(pdf)
-        for page in pdf_reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
+    for file in files:
+        reader = PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
     return text
 
-def get_text_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,
-        chunk_overlap=200
-    )
-    return text_splitter.split_text(text)
+# -------------------------
+# 4️⃣ SPLIT TEXT INTO CHUNKS
+# -------------------------
+
+def split_text(text):
+    chunks = []
+    words = text.split()
+    chunk_size = 200
+
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size])
+        chunks.append(chunk)
+
+    return chunks
+
+# -------------------------
+# 5️⃣ CREATE EMBEDDING
+# -------------------------
 
 def get_embedding(text):
-    """Generate embedding using Google Gemini directly (NO LANGCHAIN)"""
     result = genai.embed_content(
         model="models/text-embedding-004",
         content=text
     )
     return np.array(result["embedding"], dtype=np.float32)
 
-def build_faiss_index(chunks):
-    """Create FAISS index manually (this is the part that fixes your error)"""
+# -------------------------
+# 6️⃣ BUILD FAISS INDEX
+# -------------------------
+
+def build_index(chunks):
     vectors = np.array([get_embedding(chunk) for chunk in chunks])
 
     dimension = vectors.shape[1]
@@ -64,90 +75,81 @@ def build_faiss_index(chunks):
 
     # Save index + text chunks
     faiss.write_index(index, "faiss_index.bin")
-    with open("faiss_texts.pkl", "wb") as f:
+    with open("texts.pkl", "wb") as f:
         pickle.dump(chunks, f)
 
-def load_faiss_index():
-    index = faiss.read_index("faiss_index.bin")
-    with open("faiss_texts.pkl", "rb") as f:
-        texts = pickle.load(f)
-    return index, texts
+# -------------------------
+# 7️⃣ SEARCH FUNCTION
+# -------------------------
 
-def search_faiss(query, k=5):
-    index, texts = load_faiss_index()
+def search_index(query, k=5):
+    index = faiss.read_index("faiss_index.bin")
+    with open("texts.pkl", "rb") as f:
+        texts = pickle.load(f)
+
     query_vector = get_embedding(query).reshape(1, -1)
     distances, indices = index.search(query_vector, k)
+
     results = [texts[i] for i in indices[0]]
     return results
 
-def ask_gemini_with_context(question, docs):
-    """Uses your model: gemini-3-flash-preview"""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
-        temperature=0.3,
-        google_api_key=api_key
-    )
+# -------------------------
+# 8️⃣ ASK GEMINI WITH CONTEXT
+# -------------------------
 
-    context = "\n\n".join(docs)
+def ask_gemini(question, context):
+    model = genai.GenerativeModel("gemini-3-flash-preview")
 
     prompt = f"""
-    Answer the question as detailed as possible from the provided context.
-    If the answer is not in the context, say:
-    "Answer is not available in the context."
+    Answer the question based ONLY on this context:
 
-    Context:
     {context}
 
-    Question:
-    {question}
-
-    Answer:
+    Question: {question}
     """
 
-    return llm.invoke(prompt).content
+    response = model.generate_content(prompt)
+    return response.text
 
-# ---------------- MAIN APP ---------------- #
+# -------------------------
+# 9️⃣ MAIN APP LOGIC
+# -------------------------
 
-def main():
-    st.header("AI Clone Chatbot 💁")
+# Sidebar for PDF upload
+with st.sidebar:
+    st.header("Upload PDF")
+    pdf_files = st.file_uploader(
+        "Upload PDF files",
+        accept_multiple_files=True,
+        type=["pdf"]
+    )
 
-    user_question = st.text_input("Ask a Question from the PDF Files", key="user_question")
-    ask_btn = st.button("Submit Question")
-
-    if ask_btn:
+    if st.button("Process PDFs"):
         if not api_key:
-            st.error("⚠ Please enter your API Key first.")
-        elif not user_question:
-            st.error("⚠ Please enter a question.")
-        elif not os.path.exists("faiss_index.bin"):
-            st.error("⚠ Please upload and process PDF first.")
+            st.error("Please enter API Key first!")
+        elif not pdf_files:
+            st.error("Please upload at least one PDF!")
         else:
-            docs = search_faiss(user_question, k=5)
-            answer = ask_gemini_with_context(user_question, docs)
+            with st.spinner("Processing..."):
+                text = read_pdf(pdf_files)
+                chunks = split_text(text)
+                build_index(chunks)
+                st.success("PDF Processed Successfully!")
 
-            st.write("Reply:")
-            st.write(answer)
+# User question input
+question = st.text_input("Ask a question about your PDF:")
 
-    with st.sidebar:
-        st.title("Menu:")
+if st.button("Get Answer"):
+    if not api_key:
+        st.error("Enter API Key first!")
+    elif not os.path.exists("faiss_index.bin"):
+        st.error("Please upload and process PDF first!")
+    elif not question:
+        st.error("Please enter a question!")
+    else:
+        docs = search_index(question, k=5)
+        context = "\n\n".join(docs)
+        answer = ask_gemini(question, context)
 
-        pdf_docs = st.file_uploader(
-            "Upload your PDF Files and Click on Submit & Process",
-            accept_multiple_files=True,
-            key="pdf_uploader"
-        )
-
-        if st.button("Submit & Process", key="process_button"):
-            if not api_key:
-                st.error("⚠ Please enter your API Key first.")
-            elif not pdf_docs:
-                st.error("⚠ Please upload at least one PDF.")
-            else:
-                with st.spinner("Processing..."):
-                    raw_text = get_pdf_text(pdf_docs)
-                    text_chunks = get_text_chunks(raw_text)
-                    build_faiss_index(text_chunks)
-                    st.success("✅ PDFs Processed & FAISS index created!")
-
-if __name__ == "__main__":
-    main()
+        st.subheader("Answer:")
+        st.write(answer)
