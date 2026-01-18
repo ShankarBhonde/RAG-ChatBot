@@ -22,8 +22,8 @@ st.write("Upload a PDF, then ask questions about it.")
 # 2️. GET API KEY
 # -------------------------
 
-#api_key = st.text_input("Hello Enter your Google API Key:", type="password")
-api_key="AIzaSyD6BUlSS9cF_D6L3fuK5nYK90suvNdPYyU"
+api_key = st.text_input("Hello Enter your Google API Key:", type="password")
+
 if api_key:
     genai.configure(api_key=api_key)
 
